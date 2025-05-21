@@ -5,12 +5,12 @@ class ScheduleDoctorController {
   static async getAllScheduleDoctor(req, res) {
     try {
       const schedules = await ScheduleDoctor.findAll({
-        include: ['doctor']
+        include: ["doctor"],
       });
-      
-      res.status(200).json({ 
-        message: "Berhasil ambil semua jadwal dokter", 
-        data: schedules 
+
+      res.status(200).json({
+        message: "Berhasil ambil semua jadwal dokter",
+        data: schedules,
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -22,12 +22,16 @@ class ScheduleDoctorController {
     const { id } = req.params;
     try {
       const schedule = await ScheduleDoctor.findByPk(id, {
-        include: ['doctor']
+        include: ["doctor"],
       });
       if (!schedule) {
-        return res.status(404).json({ message: "Jadwal dokter tidak ditemukan" });
+        return res
+          .status(404)
+          .json({ message: "Jadwal dokter tidak ditemukan" });
       }
-      res.status(200).json({ message: "Berhasil ambil data jadwal dokter", data: schedule });
+      res
+        .status(200)
+        .json({ message: "Berhasil ambil data jadwal dokter", data: schedule });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }

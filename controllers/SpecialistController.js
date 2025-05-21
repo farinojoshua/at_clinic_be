@@ -3,7 +3,9 @@ const { Specialist } = require("../models");
 class SpecialistController {
   // Method to get all specialists
   static async getAllSpecialist(req, res) {
-    const specialists = await Specialist.findAll();
+    const specialists = await Specialist.findAll({
+      attributes: ["id", "specialist"],
+    });
 
     return res
       .status(200)
@@ -16,7 +18,9 @@ class SpecialistController {
     const { id } = req.params;
 
     // Find the specialist by primary key (ID)
-    const specialist = await Specialist.findByPk(id);
+    const specialist = await Specialist.findByPk(id, {
+      attributes: ["id", "specialist"],
+    });
 
     // If specialist not found, return 404 response
     if (!specialist) {

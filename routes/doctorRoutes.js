@@ -6,5 +6,4 @@ route.get("/", DoctorController.getAllDoctor);
 // Route to get a doctor by ID
 route.get("/:id", DoctorController.getDoctorById);
 
-
 module.exports = route;

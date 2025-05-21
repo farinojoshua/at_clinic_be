@@ -15,8 +15,4 @@ route.use("/scheduledoctor", scheduleDoctorRoutes);
 route.use("/appointment", appointmentRoutes);
 route.use("/user", userRoutes);
 
-
-
-
-
 module.exports = route;
