@@ -7,6 +7,11 @@ const port = 3000;
 
 app.use("/api", routes);
 
+app.use((req, res, next) => {
+  console.log(`[${req.method}] ${req.originalUrl}`);
+  next();
+});
+
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
