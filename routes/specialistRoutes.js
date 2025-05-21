@@ -3,8 +3,6 @@ const SpecialistController = require("../controllers/SpecialistController");
 
 // Route to get all specialists
 route.get("/", SpecialistController.getAllSpecialist);
-
-// Route to get a specialist by ID
-route.get("/:id", SpecialistController.getSpecialistById);
+route.post("/", SpecialistController.addSpecialist);
 
 module.exports = route;

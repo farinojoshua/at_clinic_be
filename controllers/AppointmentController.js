@@ -1,89 +1,196 @@
-const { Appointment, User, Doctor, ScheduleDoctor } = require("../models");
+const {
+  Appointment,
+  Doctor,
+  ScheduleDoctor,
+  Specialist,
+} = require("../models");
+const dayjs = require("dayjs");
+const { Op } = require("sequelize");
+const isBetween = require("dayjs/plugin/isBetween");
+dayjs.extend(isBetween);
 
 class AppointmentController {
-  // Get all appointments (admin only)
-  static async getAllAppointment(req, res) {
+  static async createAppointment(req, res) {
     try {
-      const appointments = await Appointment.findAll({
-        include: [
-          { model: User, attributes: ["name", "email"] },
-          { model: Doctor, include: ["Specialist"] },
-          { model: ScheduleDoctor },
-        ],
-      });
+      const { doctor_id, date, time } = req.body;
+      const user_id = req.user.id;
 
-      res.status(200).json({
-        message: "Berhasil ambil semua appointment",
-        data: appointments,
-      });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  }
-
-  // Status endpoint to check service status
-  static async getStatus(req, res) {
-    return res.status(200).json({ message: "Appointment service  running" });
-  }
-
-  // Get appointment by ID
-  static async getAppointmentById(req, res) {
-    const { id } = req.params;
-
-    try {
-      const appointment = await Appointment.findByPk(id, {
-        include: [{ model: User }, { model: Doctor }],
-      });
-
-      if (!appointment) {
-        return res.status(404).json({ message: "Appointment tidak ditemukan" });
+      // 🔍 Validasi input
+      if (!doctor_id || !date || !time) {
+        return res.status(400).json({
+          message:
+            "Field doctor_id, date (YYYY-MM-DD), dan time (HH:mm) wajib diisi",
+        });
       }
 
-      res.status(200).json({
-        message: "Berhasil ambil data appointment",
+      const doctor = await Doctor.findByPk(doctor_id);
+      if (!doctor) {
+        return res.status(404).json({ message: "Dokter tidak ditemukan" });
+      }
+
+      const dayName = dayjs(date).format("dddd");
+      const schedule = await ScheduleDoctor.findOne({
+        where: {
+          doctor_id,
+          day: dayName,
+        },
+      });
+
+      if (!schedule) {
+        return res
+          .status(400)
+          .json({ message: "Dokter tidak praktik pada hari ini" });
+      }
+
+      const timeStart = dayjs(`${date}T${schedule.start_hour}`);
+      const timeEnd = dayjs(`${date}T${schedule.end_hour}`);
+      const appointmentTime = dayjs(`${date}T${time}`);
+
+      if (
+        !appointmentTime.isBetween(timeStart.subtract(1, "minute"), timeEnd)
+      ) {
+        return res
+          .status(400)
+          .json({ message: "Waktu di luar jam praktik dokter" });
+      }
+
+      // ❌ Cek apakah slot sudah dibooking
+      const exist = await Appointment.findOne({
+        where: {
+          doctor_id,
+          appointment_time: dayjs(`${date}T${time}`).toDate(),
+        },
+      });
+
+      if (exist) {
+        return res
+          .status(400)
+          .json({ message: "Slot ini sudah dibooking pasien lain" });
+      }
+
+      // ❌ Cek apakah user sudah booking di hari itu untuk dokter yang sama
+      const userHasAppointment = await Appointment.findOne({
+        where: {
+          doctor_id,
+          user_id,
+          appointment_time: {
+            [Op.between]: [
+              dayjs(date).startOf("day").toDate(),
+              dayjs(date).endOf("day").toDate(),
+            ],
+          },
+        },
+      });
+
+      if (userHasAppointment) {
+        return res
+          .status(400)
+          .json({ message: "Sudah booking dokter ini di hari tersebut" });
+      }
+
+      // ✅ Hitung nomor antrian
+      const totalToday = await Appointment.count({
+        where: {
+          doctor_id,
+          appointment_time: {
+            [Op.between]: [
+              dayjs(date).startOf("day").toDate(),
+              dayjs(date).endOf("day").toDate(),
+            ],
+          },
+        },
+      });
+
+      const appointment = await Appointment.create({
+        user_id,
+        doctor_id,
+        schedule_doctor_id: schedule.id,
+        register_no: totalToday + 1,
+        status: "booked",
+        appointment_time: appointmentTime.toDate(),
+      });
+
+      return res.status(201).json({
+        message: "Berhasil booking appointment",
         data: appointment,
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error(error);
+      return res.status(500).json({ message: "Gagal booking appointment" });
     }
   }
 
-  // Create new appointment
-  static async createAppointment(req, res) {
-    const {
-      user_id,
-      doctor_id,
-      schedule_doctor_id,
-      register_no,
-      appointment_time,
-    } = req.body;
-
+  static async getMyAppointments(req, res) {
     try {
-      const newAppointment = await Appointment.create({
-        user_id,
-        doctor_id,
-        schedule_doctor_id,
-        register_no,
-        appointment_time,
-        status: "pending", // Default status
+      const userId = req.user.id;
+
+      const appointments = await Appointment.findAll({
+        where: { user_id: userId },
+        include: [
+          {
+            model: Doctor,
+            attributes: ["id", "name"],
+            include: [
+              {
+                model: Specialist,
+                attributes: ["specialist"],
+              },
+            ],
+          },
+          {
+            model: ScheduleDoctor,
+            attributes: ["day", "start_hour", "end_hour"],
+          },
+        ],
+        order: [["appointment_time", "ASC"]],
       });
 
-      res.status(201).json({
-        message: "Appointment berhasil dibuat",
-        data: newAppointment,
+      const result = appointments.map((appt) => ({
+        id: appt.id,
+        status: appt.status,
+        register_no: appt.register_no,
+        appointment_time: appt.appointment_time,
+        doctor: {
+          id: appt.Doctor?.id,
+          name: appt.Doctor?.name,
+          specialist: appt.Doctor?.Specialist?.specialist || null,
+        },
+        schedule: {
+          day: appt.ScheduleDoctor?.day,
+          start_hour: appt.ScheduleDoctor?.start_hour,
+          end_hour: appt.ScheduleDoctor?.end_hour,
+        },
+      }));
+
+      return res.status(200).json({
+        message: "Berhasil ambil appointment saya",
+        data: result,
       });
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      console.error(error);
+      return res.status(500).json({ message: "Gagal ambil appointment" });
     }
   }
 
-  // Update appointment status
-  static async updateStatus(req, res) {
-    const { id } = req.params;
-    const { status } = req.body;
-
+  static async updateAppointmentStatus(req, res) {
     try {
-      const appointment = await Appointment.findByPk(id);
+      const userId = req.user.id;
+      const { id } = req.params; // appointment ID
+      const { status } = req.body;
+
+      const validStatus = ["cancelled", "done"];
+      if (!validStatus.includes(status)) {
+        return res.status(400).json({
+          message: `Status hanya boleh: ${validStatus.join(" / ")}`,
+        });
+      }
+
+      const appointment = await Appointment.findOne({
+        where: {
+          id,
+          user_id: userId, // hanya user pemilik yang bisa ubah
+        },
+      });
 
       if (!appointment) {
         return res.status(404).json({ message: "Appointment tidak ditemukan" });
@@ -92,12 +199,18 @@ class AppointmentController {
       appointment.status = status;
       await appointment.save();
 
-      res.status(200).json({
-        message: "Status appointment berhasil diupdate",
-        data: appointment,
+      return res.status(200).json({
+        message: `Appointment berhasil diubah ke status '${status}'`,
+        data: {
+          id: appointment.id,
+          status: appointment.status,
+        },
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error(error);
+      return res
+        .status(500)
+        .json({ message: "Gagal update status appointment" });
     }
   }
 }

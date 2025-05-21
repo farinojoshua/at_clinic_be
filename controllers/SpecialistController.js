@@ -12,25 +12,32 @@ class SpecialistController {
       .json({ message: "Berhasil ambil data spesialis", data: specialists });
   }
 
-  // Method to get a specialist by ID
-  static async getSpecialistById(req, res) {
-    // Extract the specialist ID from the request parameters
-    const { id } = req.params;
+  static async addSpecialist(req, res) {
+    try {
+      const { specialist } = req.body;
 
-    // Find the specialist by primary key (ID)
-    const specialist = await Specialist.findByPk(id, {
-      attributes: ["id", "specialist"],
-    });
+      if (!specialist) {
+        return res
+          .status(400)
+          .json({ message: "Field 'specialist' wajib diisi" });
+      }
 
-    // If specialist not found, return 404 response
-    if (!specialist) {
-      return res.status(404).json({ message: "Spesialis tidak ditemukan" });
+      // Cek duplikat (opsional)
+      const exist = await Specialist.findOne({ where: { specialist } });
+      if (exist) {
+        return res.status(400).json({ message: "Spesialis sudah ada" });
+      }
+
+      const newSpecialist = await Specialist.create({ specialist });
+
+      return res.status(201).json({
+        message: "Spesialis berhasil ditambahkan",
+        data: newSpecialist,
+      });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Gagal menambahkan spesialis" });
     }
-
-    // If found, return the specialist data with a success message
-    return res
-      .status(200)
-      .json({ message: "Berhasil ambil data spesialis", data: specialist });
   }
 }
 
